@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>PAD/8 — Drum Machine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#141316;
+    --panel:#1c1b1f;
+    --pad-off:#26252a;
+    --pad-off-2:#2c2b31;
+    --pad-edge:#0c0b0d;
+    --amber:#ff8c3c;
+    --amber-dim:#5a3a1e;
+    --cyan:#4dd9e0;
+    --text:#ece7e0;
+    --text-dim:#8b8790;
+    --red:#ff5c5c;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent; user-select:none; -webkit-user-select:none;}
+  html,body{
+    height:100%; margin:0; background:var(--bg); color:var(--text);
+    font-family:'Inter',sans-serif; overflow:hidden; touch-action:manipulation;
+  }
+  body{
+    display:flex; flex-direction:column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background:
+      radial-gradient(120% 80% at 50% -10%, #1f1e23 0%, var(--bg) 60%);
+  }
+
+  /* ---------- Top strip: brand + LED meter ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px 8px;
+    flex-shrink:0;
+  }
+  .brand{
+    font-family:'Barlow Condensed', sans-serif;
+    font-weight:700; font-size:22px; letter-spacing:0.06em;
+    color:var(--text);
+  }
+  .brand span{ color:var(--amber); }
+  .led-strip{ display:flex; gap:4px; }
+  .led{
+    width:7px; height:16px; border-radius:2px;
+    background:var(--amber-dim);
+    box-shadow: inset 0 0 2px rgba(0,0,0,0.6);
+    transition: background 40ms linear, box-shadow 40ms linear;
+  }
+  .led.lit{
+    background:var(--amber);
+    box-shadow: 0 0 8px 1px rgba(255,140,60,0.85), inset 0 0 2px rgba(0,0,0,0.3);
+  }
+
+  /* ---------- Kit selector ---------- */
+  .kit-row{
+    flex-shrink:0;
+    display:flex; gap:8px; padding:2px 16px 12px;
+    overflow-x:auto; scrollbar-width:none;
+  }
+  .kit-row::-webkit-scrollbar{display:none;}
+  .kit-chip{
+    flex-shrink:0;
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px; letter-spacing:0.03em;
+    padding:8px 14px;
+    border-radius:20px;
+    background:var(--panel);
+    border:1px solid #302f35;
+    color:var(--text-dim);
+    white-space:nowrap;
+  }
+  .kit-chip.active{
+    background: rgba(255,140,60,0.12);
+    border-color: var(--amber);
+    color:var(--amber);
+  }
+
+  /* ---------- Pad grid ---------- */
+  .pad-grid{
+    flex:1;
+    display:grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap:10px;
+    padding:4px 14px 10px;
+    min-height:0;
+  }
+  .pad{
+    position:relative;
+    border-radius:16px;
+    background: linear-gradient(155deg, var(--pad-off-2), var(--pad-off) 60%);
+    border:1px solid #131215;
+    box-shadow:
+      0 3px 0 var(--pad-edge),
+      0 6px 10px rgba(0,0,0,0.35),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-end;
+    padding:10px 12px;
+    transition: transform 40ms ease, box-shadow 40ms ease, background 60ms ease;
+    overflow:hidden;
+  }
+  .pad::before{
+    content:'';
+    position:absolute; inset:0;
+    background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.05), transparent 55%);
+    pointer-events:none;
+  }
+  .pad.hit{
+    transform: translateY(3px) scale(0.98);
+    box-shadow:
+      0 0 0 var(--pad-edge),
+      0 2px 4px rgba(0,0,0,0.3),
+      inset 0 2px 6px rgba(0,0,0,0.5);
+  }
+  .pad-num{
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px; color:var(--text-dim);
+    position:absolute; top:8px; right:10px;
+  }
+  .pad-name{
+    font-family:'Barlow Condensed', sans-serif;
+    font-weight:600; font-size:19px; letter-spacing:0.02em;
+    color:var(--text);
+    line-height:1.05;
+  }
+  .pad-flash{
+    position:absolute; inset:0; border-radius:16px;
+    background: var(--amber);
+    opacity:0; pointer-events:none;
+  }
+  .pad.hit .pad-flash{
+    opacity:0.22;
+    transition: opacity 220ms ease-out;
+  }
+  .pad-edit-btn{
+    position:absolute; bottom:8px; right:10px;
+    width:26px; height:26px; border-radius:50%;
+    background:rgba(0,0,0,0.25);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-dim);
+    font-size:14px;
+    border:1px solid rgba(255,255,255,0.06);
+  }
+
+  /* ---------- Bottom sheet: sound picker ---------- */
+  .sheet-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55);
+    opacity:0; pointer-events:none; transition:opacity 180ms ease;
+    z-index:20;
+  }
+  .sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+  .sheet{
+    position:fixed; left:0; right:0; bottom:0;
+    background:var(--panel);
+    border-radius:22px 22px 0 0;
+    border-top:1px solid #333138;
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(100%);
+    transition:transform 220ms cubic-bezier(.2,.8,.2,1);
+    z-index:21;
+    max-height:70vh;
+    display:flex; flex-direction:column;
+  }
+  .sheet.open{ transform:translateY(0); }
+  .sheet-handle{
+    width:36px; height:4px; border-radius:2px; background:#3c3a41;
+    margin:0 auto 12px;
+  }
+  .sheet-title{
+    font-family:'Barlow Condensed', sans-serif; font-weight:700; font-size:18px;
+    letter-spacing:0.03em; margin-bottom:2px;
+  }
+  .sheet-sub{
+    font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text-dim);
+    margin-bottom:14px;
+  }
+  .sound-list{
+    overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+  }
+  .sound-opt{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 14px; border-radius:12px;
+    background:var(--pad-off);
+    border:1px solid transparent;
+    font-family:'Inter'; font-size:15px; font-weight:500;
+  }
+  .sound-opt.selected{
+    border-color:var(--amber);
+    background:rgba(255,140,60,0.10);
+    color:var(--amber);
+  }
+  .sound-opt small{
+    font-family:'JetBrains Mono', monospace; font-weight:400; font-size:10px;
+    color:var(--text-dim);
+  }
+  .sound-opt.selected small{ color:var(--amber); opacity:0.75; }
+
+  .hint{
+    text-align:center; font-family:'JetBrains Mono', monospace;
+    font-size:10px; color:var(--text-dim); padding-bottom:8px; flex-shrink:0;
+    letter-spacing:0.02em;
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">PAD<span>/</span>8</div>
+    <div class="led-strip" id="ledStrip"></div>
+  </div>
+
+  <div class="kit-row" id="kitRow"></div>
+
+  <div class="pad-grid" id="padGrid"></div>
+
+  <div class="hint">タップで再生 ・ 各パッド右下の ● で音を変更</div>
+
+  <div class="sheet-backdrop" id="sheetBackdrop"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="sheetTitle">PAD 1 の音を選択</div>
+    <div class="sheet-sub">タップして即プレビュー再生</div>
+    <div class="sound-list" id="soundList"></div>
+  </div>
+
+<script>
+/* ===================== Audio Engine ===================== */
+let actx = null;
+function ensureAudio(){
+  if(!actx){
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if(actx.state === 'suspended') actx.resume();
+}
+
+function noiseBuffer(){
+  const bufferSize = actx.sampleRate * 1;
+  const buf = actx.createBuffer(1, bufferSize, actx.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<bufferSize;i++) data[i] = Math.random()*2-1;
+  return buf;
+}
+let cachedNoise = null;
+function getNoise(){
+  if(!cachedNoise) cachedNoise = noiseBuffer();
+  return cachedNoise;
+}
+
+function envGain(node, t0, attack, peak, decay, sustain=0){
+  node.gain.cancelScheduledValues(t0);
+  node.gain.setValueAtTime(0.0001, t0);
+  node.gain.linearRampToValueAtTime(peak, t0+attack);
+  node.gain.exponentialRampToValueAtTime(Math.max(sustain,0.0001), t0+attack+decay);
+}
+
+/* Synth voices. Each takes (t, flavor) where flavor is 0..1 tuning knob per kit */
+const Synth = {
+  kick(t, flavor=0.5){
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = 'sine';
+    const startF = 150 + flavor*40;
+    const endF = 40;
+    o.frequency.setValueAtTime(startF, t);
+    o.frequency.exponentialRampToValueAtTime(endF, t + 0.12);
+    envGain(g, t, 0.001, 1, 0.35, 0.001);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t+0.4);
+
+    // click transient
+    const n = actx.createBufferSource();
+    n.buffer = getNoise();
+    const nf = actx.createBiquadFilter();
+    nf.type='highpass'; nf.frequency.value=800;
+    const ng = actx.createGain();
+    envGain(ng, t, 0.0005, 0.5, 0.03, 0.0001);
+    n.connect(nf).connect(ng).connect(actx.destination);
+    n.start(t); n.stop(t+0.04);
+  },
+  snare(t, flavor=0.5){
+    const n = actx.createBufferSource();
+    n.buffer = getNoise();
+    const nf = actx.createBiquadFilter();
+    nf.type='bandpass'; nf.frequency.value = 1800 + flavor*800; nf.Q.value=0.8;
+    const ng = actx.createGain();
+    envGain(ng, t, 0.001, 0.9, 0.18, 0.0001);
+    n.connect(nf).connect(ng).connect(actx.destination);
+    n.start(t); n.stop(t+0.22);
+
+    const o = actx.createOscillator();
+    o.type='triangle'; o.frequency.value = 180 + flavor*40;
+    const og = actx.createGain();
+    envGain(og, t, 0.001, 0.5, 0.12, 0.0001);
+    o.connect(og).connect(actx.destination);
+    o.start(t); o.stop(t+0.15);
+  },
+  closedHat(t, flavor=0.5){
+    const n = actx.createBufferSource();
+    n.buffer = getNoise();
+    const hp = actx.createBiquadFilter();
+    hp.type='highpass'; hp.frequency.value = 7000 + flavor*2000;
+    const g = actx.createGain();
+    envGain(g, t, 0.0005, 0.5, 0.05, 0.0001);
+    n.connect(hp).connect(g).connect(actx.destination);
+    n.start(t); n.stop(t+0.07);
+  },
+  openHat(t, flavor=0.5){
+    const n = actx.createBufferSource();
+    n.buffer = getNoise();
+    const hp = actx.createBiquadFilter();
+    hp.type='highpass'; hp.frequency.value = 6500;
+    const g = actx.createGain();
+    envGain(g, t, 0.0005, 0.5, 0.35+flavor*0.2, 0.0001);
+    n.connect(hp).connect(g).connect(actx.destination);
+    n.start(t); n.stop(t+0.6);
+  },
+  tom(t, flavor=0.5){
+    const o = actx.createOscillator();
+    o.type='sine';
+    const startF = 220 - flavor*60;
+    o.frequency.setValueAtTime(startF, t);
+    o.frequency.exponentialRampToValueAtTime(startF*0.5, t+0.25);
+    const g = actx.createGain();
+    envGain(g, t, 0.001, 0.9, 0.3, 0.0001);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t+0.35);
+  },
+  clap(t, flavor=0.5){
+    for(let i=0;i<3;i++){
+      const dt = t + i*0.012;
+      const n = actx.createBufferSource();
+      n.buffer = getNoise();
+      const bp = actx.createBiquadFilter();
+      bp.type='bandpass'; bp.frequency.value=1500; bp.Q.value=1.2;
+      const g = actx.createGain();
+      envGain(g, dt, 0.0005, 0.6, 0.05, 0.0001);
+      n.connect(bp).connect(g).connect(actx.destination);
+      n.start(dt); n.stop(dt+0.08);
+    }
+    const n2 = actx.createBufferSource();
+    n2.buffer = getNoise();
+    const bp2 = actx.createBiquadFilter();
+    bp2.type='bandpass'; bp2.frequency.value=1500; bp2.Q.value=1.2;
+    const g2 = actx.createGain();
+    envGain(g2, t+0.04, 0.0005, 0.5, 0.25+flavor*0.1, 0.0001);
+    n2.connect(bp2).connect(g2).connect(actx.destination);
+    n2.start(t+0.04); n2.stop(t+0.35);
+  },
+  rim(t){
+    const o = actx.createOscillator();
+    o.type='square'; o.frequency.value=1400;
+    const g = actx.createGain();
+    envGain(g, t, 0.0005, 0.4, 0.03, 0.0001);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t+0.05);
+  },
+  cowbell(t){
+    [540,800].forEach(f=>{
+      const o = actx.createOscillator();
+      o.type='square'; o.frequency.value=f;
+      const g = actx.createGain();
+      envGain(g, t, 0.001, 0.35, 0.25, 0.0001);
+      o.connect(g).connect(actx.destination);
+      o.start(t); o.stop(t+0.3);
+    });
+  },
+  clave(t){
+    const o = actx.createOscillator();
+    o.type='sine'; o.frequency.value=2400;
+    const g = actx.createGain();
+    envGain(g, t, 0.0005, 0.45, 0.06, 0.0001);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t+0.08);
+  },
+  cymbal(t, flavor=0.5){
+    const n = actx.createBufferSource();
+    n.buffer = getNoise();
+    const hp = actx.createBiquadFilter();
+    hp.type='highpass'; hp.frequency.value=5000;
+    const bp = actx.createBiquadFilter();
+    bp.type='bandpass'; bp.frequency.value=9000; bp.Q.value=0.5;
+    const g = actx.createGain();
+    envGain(g, t, 0.001, 0.5, 0.9+flavor*0.4, 0.0001);
+    n.connect(hp).connect(bp).connect(g).connect(actx.destination);
+    n.start(t); n.stop(t+1.4);
+  }
+};
+
+const SOUND_TYPES = [
+  {id:'kick',      name:'キック',        tag:'LOW'},
+  {id:'snare',     name:'スネア',        tag:'MID'},
+  {id:'closedHat',name:'クローズドハット', tag:'HI'},
+  {id:'openHat',   name:'オープンハット', tag:'HI'},
+  {id:'tom',       name:'タム',          tag:'LOW-MID'},
+  {id:'clap',      name:'クラップ',       tag:'MID'},
+  {id:'rim',       name:'リムショット',   tag:'HI'},
+  {id:'cowbell',   name:'カウベル',       tag:'MID-HI'},
+  {id:'clave',     name:'クラベ',        tag:'HI'},
+  {id:'cymbal',    name:'シンバル',       tag:'HI'},
+];
+const soundById = Object.fromEntries(SOUND_TYPES.map(s=>[s.id,s]));
+
+function playSound(id, flavor){
+  ensureAudio();
+  const t = actx.currentTime;
+  (Synth[id] || Synth.kick)(t, flavor);
+}
+
+/* ===================== Kits ===================== */
+const KITS = [
+  { name:'ACOUSTIC', flavor:0.5, pads:['kick','snare','closedHat','openHat','tom','clap','rim','cymbal'] },
+  { name:'808',       flavor:0.75, pads:['kick','snare','closedHat','openHat','clap','cowbell','rim','tom'] },
+  { name:'TECHNO',    flavor:0.3,  pads:['kick','closedHat','closedHat','clap','rim','cowbell','openHat','tom'] },
+  { name:'LO-FI',     flavor:0.15, pads:['kick','snare','closedHat','clave','tom','clap','rim','openHat'] },
+];
+
+let currentKitIndex = 0;
+let padAssignments = [...KITS[0].pads]; // array of sound ids, length 8
+let currentFlavor = KITS[0].flavor;
+let editingPadIndex = null;
+
+/* ===================== Build UI ===================== */
+const padGrid = document.getElementById('padGrid');
+const kitRow = document.getElementById('kitRow');
+const ledStrip = document.getElementById('ledStrip');
+const sheet = document.getElementById('sheet');
+const sheetBackdrop = document.getElementById('sheetBackdrop');
+const sheetTitle = document.getElementById('sheetTitle');
+const soundList = document.getElementById('soundList');
+
+// LEDs
+const LED_COUNT = 16;
+for(let i=0;i<LED_COUNT;i++){
+  const led = document.createElement('div');
+  led.className='led';
+  ledStrip.appendChild(led);
+}
+let ledCursor = 0;
+function pulseLeds(){
+  const leds = ledStrip.children;
+  for(let i=0;i<3;i++){
+    const idx = (ledCursor + i) % LED_COUNT;
+    leds[idx].classList.add('lit');
+    setTimeout(()=>leds[idx].classList.remove('lit'), 140);
+  }
+  ledCursor = (ledCursor + 2) % LED_COUNT;
+}
+
+// Kit chips
+function renderKits(){
+  kitRow.innerHTML='';
+  KITS.forEach((kit, i)=>{
+    const chip = document.createElement('div');
+    chip.className = 'kit-chip' + (i===currentKitIndex ? ' active':'');
+    chip.textContent = kit.name;
+    chip.addEventListener('click', ()=>{
+      currentKitIndex = i;
+      padAssignments = [...kit.pads];
+      currentFlavor = kit.flavor;
+      renderKits();
+      renderPads();
+    });
+    kitRow.appendChild(chip);
+  });
+}
+
+// Pads
+function renderPads(){
+  padGrid.innerHTML='';
+  padAssignments.forEach((soundId, i)=>{
+    const pad = document.createElement('div');
+    pad.className='pad';
+    pad.dataset.index = i;
+
+    const num = document.createElement('div');
+    num.className='pad-num';
+    num.textContent = String(i+1).padStart(2,'0');
+
+    const flash = document.createElement('div');
+    flash.className='pad-flash';
+
+    const name = document.createElement('div');
+    name.className='pad-name';
+    name.textContent = soundById[soundId].name;
+
+    const editBtn = document.createElement('div');
+    editBtn.className='pad-edit-btn';
+    editBtn.textContent='●';
+
+    pad.appendChild(num);
+    pad.appendChild(flash);
+    pad.appendChild(name);
+    pad.appendChild(editBtn);
+
+    const trigger = (e)=>{
+      e.preventDefault();
+      hitPad(i);
+    };
+    pad.addEventListener('touchstart', trigger, {passive:false});
+    pad.addEventListener('mousedown', trigger);
+
+    editBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openSheet(i);
+    });
+    editBtn.addEventListener('touchstart', (e)=>{
+      e.stopPropagation();
+      e.preventDefault();
+      openSheet(i);
+    }, {passive:false});
+
+    padGrid.appendChild(pad);
+  });
+}
+
+function hitPad(i){
+  const soundId = padAssignments[i];
+  playSound(soundId, currentFlavor);
+  pulseLeds();
+  const padEl = padGrid.children[i];
+  padEl.classList.add('hit');
+  setTimeout(()=>padEl.classList.remove('hit'), 130);
+}
+
+/* ===================== Sound picker sheet ===================== */
+function openSheet(padIndex){
+  editingPadIndex = padIndex;
+  sheetTitle.textContent = `PAD ${padIndex+1} の音を選択`;
+  renderSoundList();
+  sheet.classList.add('open');
+  sheetBackdrop.classList.add('open');
+}
+function closeSheet(){
+  sheet.classList.remove('open');
+  sheetBackdrop.classList.remove('open');
+  editingPadIndex = null;
+}
+sheetBackdrop.addEventListener('click', closeSheet);
+
+function renderSoundList(){
+  soundList.innerHTML='';
+  const current = padAssignments[editingPadIndex];
+  SOUND_TYPES.forEach(s=>{
+    const opt = document.createElement('div');
+    opt.className='sound-opt' + (s.id===current ? ' selected':'');
+    opt.innerHTML = `<span>${s.name}</span><small>${s.tag}</small>`;
+    opt.addEventListener('click', ()=>{
+      padAssignments[editingPadIndex] = s.id;
+      ensureAudio();
+      playSound(s.id, currentFlavor);
+      renderPads();
+      renderSoundList();
+      hitPad(editingPadIndex);
+      setTimeout(closeSheet, 180);
+    });
+    soundList.appendChild(opt);
+  });
+}
+
+/* ===================== Init ===================== */
+renderKits();
+renderPads();
+
+// Unlock audio on first touch anywhere
+document.body.addEventListener('touchstart', ensureAudio, {once:true, passive:true});
+document.body.addEventListener('mousedown', ensureAudio, {once:true});
+</script>
+</body>
+</html>
